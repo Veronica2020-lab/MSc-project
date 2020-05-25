@@ -1,0 +1,108 @@
+library(data.table)
+TABLE_gen<- fread("geneticfile.raw")# the output generated fromp plink when you run the --recodeA command 
+clinical<- fread("briefclinical.txt") #you can use the covariates.txt file for this as it should have sufficient information for basic analysis. If you need to do more complex analysis later, you can import the full clinical file. 
+TABLE<- merge(clinical, TABLE_gen, by="IID") # if for whatever reason you don't have a column called IID in the first file then find the equivalent. i.e. make sure it is referring to the same ID and use the below command instead
+#TABLE<- merge(clinical, TABLE_gen, by.x="IID", by.y="whateverthisiscalled") 
+
+
+#create a table called coefficients. This table has four columns at the moment. This is dependant on the number of fields you want to save to it. 
+coefficients<-as.data.frame(matrix(ncol= 4))
+#give headings to each column in the coefficients table
+names(coefficients) <- c("SNP","Coeff", "se", "Pvalue" )
+TABLE<-as.data.frame(TABLE)#input two format, 1.data.frame;2.data.table, therefore assign which you wannt to use
+#this is the beginning of the for loop. In the for loop we define a new object comprising of the relevant clinical information and one SNP. In this example below the first nine columns are IDs, clinical information, and demographic information. So the SNPs will start from column 10. 
+##notice that when I created the snp object I have put the SNP we are looking at in the first column, then I have pasted the remaining 9 columns which correspond to the covariates etc... This is because I wanted to make it easier to extract the coefficients later in the loop
+for (i in 14:ncol(TABLE)) {
+  #print(colnames(TABLE)[i])
+  snp<-TABLE[,c(i,1:13)]
+  #print(class(snp))
+  modellogistic<- glm(snp$DX_bl~ snp[,1]+ snp$AGE, data=snp, family="binomial")#site is important to include as well
+  #given that the first nine columns are non genetic information and we are interested in genetic variants, it is easier to create a new entity called j which will refer to the number of SNPs. eg column ten will be SNP 1. 
+  j= i-13
+  coefficients[j,1]<- paste(colnames(TABLE)[i]) #takes the SNP name and pastes it in to the table under the column "SNP". 
+  #find the numbers that need to go in the square brackets... practice by typing different numbers in to summary(modellogistic)$coefficients[,] to see what the results of the different numbers will be. 
+  coefficients[j,2]<- summary(modellogistic)$coefficients[2,2]
+  coefficients[j,3]<- summary(modellogistic)$coefficients[2,3] 
+  coefficients[j,4]<- summary(modellogistic)$coefficients[2,4] 
+}
+warnings()
+summary(modellogistic)
+## Warning: glm.fit: fitted probabilities numerically 0 or 1 occurred
+#save the results to a text file
+fwrite(coefficients, "coefficients_age.txt", row.names=FALSE, sep="\t", quote= FALSE)
+
+
+#04.25update
+library(data.table)
+library(dplyr)
+TABLE_gen<- fread("geneticfile.raw")# the output generated fromp plink when you run the --recodeA command 
+clinical<- fread("covariate.txt") #you can use the covariates.txt file for this as it should have sufficient information for basic analysis. If you need to do more complex analysis later, you can import the full clinical file. 
+TABLE<- merge(clinical, TABLE_gen, by="IID") 
+TABLE$PHENOTYPE[TABLE$PHENOTYPE == "-9"] <- 0
+
+snp<- TABLE[,c(15,1:13)]
+snplist<-as.list(snp[,1])
+
+modellogistic<- glm(snp$PHENOTYPE~snplist[[1]] +snp$AGE + snp$PTGENDER + snp$PTEDUCAT, data=snp,family=binomial)
+summary(modellogistic)
+
+
+#05.20 update
+library(data.table)
+TABLE_gen<- fread("geneticfile.raw")# the output generated fromp plink when you run the --recodeA command 
+clinical<- fread("briefclinical.txt") #you can use the covariates.txt file for this as it should have sufficient information for basic analysis. If you need to do more complex analysis later, you can import the full clinical file. 
+TABLE<- merge(clinical, TABLE_gen, by="IID") 
+TABLE<-as.data.frame(TABLE)
+white<-subset(TABLE,PTRACCAT="White")
+white_clean <-white[,-c(2:6,8:17)]
+head(white_clean[1:5])
+library(gtools)
+#whiteData1<-na.replace(whitePCA_smallscaled[,1:65530], '999') #whiteData2<-na.replace(whitePCA_smallscaled[,c(1,65531:93227)],'999') #whiteData<-merge(whiteData1,whiteData2,by="IID")
+whiteData<-na.replace(white_clean, 999)
+d<-dist(as.matrix(whiteData))#using hierarchical cluster analysis to distinguish ethnic groups. 
+hc<-hclust(d)
+plot(hc)
+summary(hc)#how to find which IID should be exclude?
+
+a<-subset(whiteData,PTRACCAT=999)
+str(a)
+#05.22 update PCA study on white
+library("FactoMineR")
+library("factoextra")
+PCA(whiteData[,-c(1:2)], scale.unit = TRUE, ncp = 5, graph = TRUE)#Error in PCA(whiteData, scale.unit = TRUE, ncp = 5, graph = TRUE) : 
+                                                          #The following variables are not quantitative:  IID
+                                                          #The following variables are not quantitative:  PTRACCAT
+library("FactoMineR")
+res.pca <- PCA(whiteData[,-c(1:2)], graph = FALSE)
+print(res.pca)
+var <- get_pca_var(res.pca)
+print(var)
+head(var$cos2, 4)
+
+#05.24 update
+    #martital status -->social isolation --> effects on health behaviors (2005，doi:10.1017/S0144686X04003332；2011, https://doi.org/10.1037/a0022826)
+                                        #-->loneliness（2005，doi:10.1017/S0144686X04003332；1997；2018）
+    #(2018)living alone was positively associated with common mental disorders. data were drawn from the 1993, 2000 and 2007 National Psychiatric Morbidity Surveys. https://doi.org/10.1371/journal.pone.0215182
+    #(1997)long-term illness rates are generally lowest for those in first marriage, followed by the remarried, with intermediate values for the widowed and divorced, and highest for the single.DOI: 10.2307/353669
+    #(2005)Social resources were indicated by marital status, especially widowhood; ‘time spent alone’ and the perception of ‘increased loneliness over the previous decade’. The link with widowhood is well established and supports the findings of Wenger et al. (1996)【doi:10.1017/S0144686X04003332
+coefficients<-as.data.frame(matrix(ncol= 4))
+#give headings to each column in the coefficients table
+names(coefficients) <- c("SNP","Coeff", "se", "Pvalue" )
+TABLE<-as.data.frame(TABLE)
+for (i in 18:ncol(TABLE)) {
+  #print(colnames(TABLE)[i])
+  snp<-TABLE[,c(i,1:17)]
+  #print(class(snp))
+  modellogistic<- glm(snp$DX_bl~ snp[,1]+ snp$PTMARRY, data=snp, family="binomial")#site is important to include as well
+  #given that the first nine columns are non genetic information and we are interested in genetic variants, it is easier to create a new entity called j which will refer to the number of SNPs. eg column ten will be SNP 1. 
+  j= i-17
+  coefficients[j,1]<- paste(colnames(TABLE)[i]) #takes the SNP name and pastes it in to the table under the column "SNP". 
+  #find the numbers that need to go in the square brackets... practice by typing different numbers in to summary(modellogistic)$coefficients[,] to see what the results of the different numbers will be. 
+  coefficients[j,2]<- summary(modellogistic)$coefficients[2,2]
+  coefficients[j,3]<- summary(modellogistic)$coefficients[2,3] 
+  coefficients[j,4]<- summary(modellogistic)$coefficients[2,4] 
+}
+fwrite(coefficients, "coefficients_marital_state.txt", row.names=FALSE, sep="\t", quote= FALSE)
+
+modellogistic_MARRY<- glm(snp$DX_bl~ snp$PTMARRY, data=snp, family="binomial")
+summary(modellogistic_MARRY)
